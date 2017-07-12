@@ -1,4 +1,6 @@
-
+.boost
+.htslib
+src/allis
 refpanel/
 
 # Prerequisites
