@@ -223,11 +223,14 @@ phaseBamRun(TConfig& c) {
     }
     bam_destroy1(rec);
     hts_itr_destroy(iter);
-    if (seqlen) free(seq);
 
     // Fetch all pairs
     hts_itr_t* itr = sam_itr_queryi(idx, refIndex, 0, hdr->target_len[refIndex]);
     bam1_t* r = bam_init1();
+    // Annotate REF and ALT support
+    typedef std::vector<uint32_t> TAlleleSupport;
+    TAlleleSupport ref(pv.size(), 0);
+    TAlleleSupport alt(pv.size(), 0);
     while (sam_itr_next(samfile, itr, r) >= 0) {
       bool h1Found = false;
       bool h2Found = false;
@@ -237,26 +240,103 @@ phaseBamRun(TConfig& c) {
 	// Inconsistent haplotype assignment for this pair
 	//std::cout << "Read\t" << bam_get_qname(r) << "\t" <<  hdr->target_name[r->core.tid] << "\t" << r->core.pos << "\t" << hdr->target_name[r->core.mtid] << "\t" << r->core.mpos << std::endl;
 	++ambiguousReads;
-      } else if (h1Found) {
-	int32_t hp = 1;
-	++assignedReadsH1;
-	bam_aux_append(r, "HP", 'i', 4, (uint8_t*)&hp);
-	if (!sam_write1(h1bam, hdr, r)) {
-	  std::cerr << "Could not write to bam file!" << std::endl;
-	  return -1;
+      } else if ((!h1Found) && (!h2Found)) {
+	++unassignedReads;
+      } else {
+	// Valid haplotype assignment
+	TPhasedVariants::const_iterator vIt = std::lower_bound(pv.begin(), pv.end(), BiallelicVariant(r->core.pos), SortVariants<BiallelicVariant>());
+	TPhasedVariants::const_iterator vItEnd = std::upper_bound(pv.begin(), pv.end(), BiallelicVariant(lastAlignedPosition(r)), SortVariants<BiallelicVariant>());
+	if (vIt != vItEnd) {
+	  // Get read sequence
+	  std::string sequence;
+	  sequence.resize(r->core.l_qseq);
+	  uint8_t* seqptr = bam_get_seq(r);
+	  for (int32_t i = 0; i < r->core.l_qseq; ++i) sequence[i] = "=ACMGRSVTWYHKDBN"[bam_seqi(seqptr, i)];
+	  
+	  // Parse CIGAR
+	  uint32_t* cigar = bam_get_cigar(r);
+	  for(;vIt != vItEnd; ++vIt) {
+	    int32_t gp = r->core.pos; // Genomic position
+	    int32_t sp = 0; // Sequence position
+	    bool varFound = false;
+	    for (std::size_t i = 0; ((i < r->core.n_cigar) && (!varFound)); ++i) {
+	      if (bam_cigar_op(cigar[i]) == BAM_CSOFT_CLIP) sp += bam_cigar_oplen(cigar[i]);
+	      else if (bam_cigar_op(cigar[i]) == BAM_CINS) sp += bam_cigar_oplen(cigar[i]);
+	      else if (bam_cigar_op(cigar[i]) == BAM_CSOFT_CLIP) sp += bam_cigar_oplen(cigar[i]);
+	      else if (bam_cigar_op(cigar[i]) == BAM_CDEL) gp += bam_cigar_oplen(cigar[i]);
+	      else if (bam_cigar_op(cigar[i]) == BAM_CREF_SKIP) gp += bam_cigar_oplen(cigar[i]);
+	      else if (bam_cigar_op(cigar[i]) == BAM_CHARD_CLIP) {
+		//Nop
+	      } else if (bam_cigar_op(cigar[i]) == BAM_CMATCH) {
+		if (gp + (int32_t) bam_cigar_oplen(cigar[i]) < vIt->pos) {
+		  gp += bam_cigar_oplen(cigar[i]);
+		  sp += bam_cigar_oplen(cigar[i]);
+		} else {
+		  for(std::size_t k = 0; k<bam_cigar_oplen(cigar[i]); ++k, ++sp, ++gp) {
+		    if (gp == vIt->pos) {
+		      varFound = true;
+		      // Check REF allele
+		      if (vIt->ref == std::string(seq + gp, seq + gp + vIt->ref.size())) {
+			// Check ALT allele
+			if ((sp + vIt->alt.size() < sequence.size()) && (sp + vIt->ref.size() < sequence.size())) {
+			  if (vIt->ref.size() == vIt->alt.size()) {
+			    // SNP
+			    if ((sequence.substr(sp, vIt->alt.size()) == vIt->alt) && (sequence.substr(sp, vIt->ref.size()) != vIt->ref)) ++alt[vIt-pv.begin()];
+			    else if ((sequence.substr(sp, vIt->alt.size()) != vIt->alt) && (sequence.substr(sp, vIt->ref.size()) == vIt->ref)) ++ref[vIt-pv.begin()];
+			  }
+			} else if (vIt->ref.size() < vIt->alt.size()) {
+			  // Insertion
+			  int32_t diff = vIt->alt.size() - vIt->ref.size();
+			  std::string refProbe = vIt->ref + std::string(seq + gp + vIt->ref.size(), seq + gp + vIt->ref.size() + diff);
+			  if ((sequence.substr(sp, vIt->alt.size()) == vIt->alt) && (sequence.substr(sp, vIt->alt.size()) != refProbe)) ++alt[vIt-pv.begin()];
+			  else if ((sequence.substr(sp, vIt->alt.size()) != vIt->alt) && (sequence.substr(sp, vIt->alt.size()) == refProbe)) ++ref[vIt-pv.begin()];
+			} else {
+			  // Deletion
+			  int32_t diff = vIt->ref.size() - vIt->alt.size();
+			  std::string altProbe = vIt->alt + std::string(seq + gp + vIt->ref.size(), seq + gp + vIt->ref.size() + diff);
+			  if ((sequence.substr(sp, vIt->ref.size()) == altProbe) && (sequence.substr(sp, vIt->ref.size()) != vIt->ref)) ++alt[vIt-pv.begin()];
+			  else if ((sequence.substr(sp, vIt->ref.size()) != altProbe) && (sequence.substr(sp, vIt->ref.size()) == vIt->ref)) ++ref[vIt-pv.begin()];
+			}
+		      }
+		    }
+		  }
+		}
+	      }
+	      else {
+		std::cerr << "Unknown Cigar options" << std::endl;
+		return 1;
+	      }
+	    }
+	  }
 	}
-      } else if (h2Found) {
-	int32_t hp = 2;
-	++assignedReadsH2;
-	bam_aux_append(r, "HP", 'i', 4, (uint8_t*)&hp);
-	if (!sam_write1(h2bam, hdr, r)) {
-	  std::cerr << "Could not write to bam file!" << std::endl;
-	  return -1;
+	// Output read to haplotype specific BAM
+	if (h1Found) {
+	  int32_t hp = 1;
+	  ++assignedReadsH1;
+	  bam_aux_append(r, "HP", 'i', 4, (uint8_t*)&hp);
+	  if (!sam_write1(h1bam, hdr, r)) {
+	    std::cerr << "Could not write to bam file!" << std::endl;
+	    return -1;
+	  }
+	} else if (h2Found) {
+	  int32_t hp = 2;
+	  ++assignedReadsH2;
+	  bam_aux_append(r, "HP", 'i', 4, (uint8_t*)&hp);
+	  if (!sam_write1(h2bam, hdr, r)) {
+	    std::cerr << "Could not write to bam file!" << std::endl;
+	    return -1;
+	  }
 	}
-      } else ++unassignedReads;
+      }
     }
     bam_destroy1(r);
     hts_itr_destroy(itr);
+    if (seqlen) free(seq);
+
+    // Output phased allele support
+    for (uint32_t i = 0; i<pv.size(); ++i) {
+      std::cout << chrName << "\t" << pv[i].pos << "\t" << pv[i].ref << "\t" << pv[i].alt << "\t" << std::endl;
+    }
   }
   fai_destroy(fai);
 
