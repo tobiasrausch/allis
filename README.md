@@ -1,2 +1,2 @@
-# allis
-Allele-specific expression and open chromatin pipeline
+Allele-specific expression and allele-specific open chromatin analysis pipeline
+-------------------------------------------------------------------------------
