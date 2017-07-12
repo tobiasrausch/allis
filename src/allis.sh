@@ -21,6 +21,7 @@ export PATH=/g/funcgen/bin/:${PATH}
 
 # CMD params
 THREADS=4
+MQ=1
 BAM=${1}
 HG=${2}
 OP=${3}
@@ -29,6 +30,7 @@ OP=${3}
 if [ $# -eq 3 ]
 then
     # Call variants
+    echo "FreeBayes variant calling"
     freebayes --no-partial-observations --min-repeat-entropy 1 --report-genotype-likelihood-max --min-alternate-fraction 0.15 --fasta-reference ${HG} --genotype-qualities -b ${BAM} -v ${OP}.freebayes.vcf
     bgzip ${OP}.freebayes.vcf
     tabix ${OP}.freebayes.vcf.gz
@@ -39,27 +41,36 @@ else
 fi
 
 # Phase against 1kGP
-FILES=""
+rm -f ${OP}.rename.fwd.chrs ${OP}.rename.rev.chrs
 for CHR in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22
+do
+    echo chr${CHR} ${CHR} >> ${OP}.rename.fwd.chrs
+    echo ${CHR} chr${CHR} >> ${OP}.rename.rev.chrs
+done
+bcftools annotate -O b -o ${OP}.input.bcf --rename-chrs ${OP}.rename.fwd.chrs ${OP}.freebayes.vcf.gz
+bcftools index ${OP}.input.bcf
+FILES=""
+#for CHR in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22
+for CHR in 1 2
 do
     echo "Eagle2 phasing chr${CHR}"
-    bcftools view ${OP}.freebayes.vcf.gz chr${CHR} | sed "s/^##contig=<ID=chr${CHR},/##contig=<ID=${CHR},/" | grep -v "^##contig=<ID=chr" | sed "s/^chr${CHR}\t/${CHR}\t/" | bcftools view -O b -o ${OP}.input.chr${CHR}.bcf -
-    bcftools index ${OP}.input.chr${CHR}.bcf
-    eagle --numThreads ${THREADS} --vcfRef ${BASEDIR}/../refpanel/chr${CHR}.bcf --vcfTarget ${OP}.input.chr${CHR}.bcf --geneticMapFile ${BASEDIR}/../refpanel/genetic_map_hg19_withX.txt.gz --outPrefix ${OP}.chr${CHR}.eagle2 --vcfOutFormat b --chrom ${CHR} 2>&1 | gzip -c > ${OP}.chr${CHR}.eagle2.log.gz
+    eagle --numThreads ${THREADS} --vcfRef ${BASEDIR}/../refpanel/chr${CHR}.bcf --vcfTarget ${OP}.input.bcf --geneticMapFile ${BASEDIR}/../refpanel/genetic_map_hg19_withX.txt.gz --outPrefix ${OP}.chr${CHR}.eagle2 --vcfOutFormat b --chrom ${CHR} 2>&1 | gzip -c > ${OP}.chr${CHR}.eagle2.log.gz
     bcftools index ${OP}.chr${CHR}.eagle2.bcf
-    rm ${OP}.input.chr${CHR}.bcf ${OP}.input.chr${CHR}.bcf.csi
-    bcftools view ${OP}.chr${CHR}.eagle2.bcf | fill-an-ac | bcftools annotate -x ^INFO/AC,INFO/AN,^FORMAT/GT - | sed "s/^##contig=<ID=${CHR},/##contig=<ID=chr${CHR},/" | sed "s/^${CHR}\t/chr${CHR}\t/" | bcftools view -O b -o ${OP}.output.chr${CHR}.bcf -
-    bcftools index ${OP}.output.chr${CHR}.bcf
-    rm ${OP}.chr${CHR}.eagle2.bcf ${OP}.chr${CHR}.eagle2.bcf.csi
-    FILES=${FILES}" "${OP}.output.chr${CHR}.bcf
+    FILES=${FILES}" "${OP}.chr${CHR}.eagle2.bcf
 done
-bcftools concat ${FILES} | grep -v "^##contig=<ID=" | bgzip > ${OP}.eagle2.vcf.gz
-tabix ${OP}.eagle2.vcf.gz
-bcftools view -O b -o ${OP}.eagle2.bcf ${OP}.eagle2.vcf.gz
-bcftools index ${OP}.eagle2.bcf
-rm ${OP}.eagle2.vcf.gz ${OP}.eagle2.vcf.gz.tbi
+rm ${OP}.input.bcf ${OP}.input.bcf.csi
+bcftools concat ${FILES} | fill-an-ac | bcftools annotate -O b -o ${OP}.eagle2join.bcf -x ^INFO/AC,INFO/AN,^FORMAT/GT -
+bcftools index ${OP}.eagle2join.bcf
+bcftools annotate -O b -o ${OP}.ealge2.bcf --rename-chrs ${OP}.rename.rev.chrs ${OP}.eagle2join.bcf
+bcftools index ${OP}.ealge2.bcf
+rm ${OP}.eagle2join.bcf ${OP}.eagle2join.bcf.csi
+rm ${OP}.rename.fwd.chrs ${OP}.rename.rev.chrs
 for CHR in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22
 do
-    rm ${OP}.output.chr${CHR}.bcf ${OP}.output.chr${CHR}.bcf.csi
+    rm ${OP}.chr${CHR}.eagle2.bcf ${OP}.chr${CHR}.eagle2.bcf.csi
 done
 
+# Run Allis
+echo "Running allis"
+SAMPLE=`bcftools view ${OP}.ealge2.bcf | grep -m 1 "^#CHROM" | cut -f 10`
+${BASEDIR}/allis -m ${MQ} -g ${HG} -v ${OP}.ealge2.bcf -p ${OP}.h1.bam -q ${OP}.h2.bam -s ${SAMPLE} -a ${OP}.tsv ${BAM} | gzip -c > ${OP}.allis.log.gz

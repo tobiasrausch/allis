@@ -54,7 +54,9 @@ Contact: Tobias Rausch (rausch@embl.de)
 using namespace allis;
 
 struct Config {
+  unsigned short minMapQual;
   std::string sample;
+  boost::filesystem::path as;
   boost::filesystem::path genome;
   boost::filesystem::path h1bam;
   boost::filesystem::path h2bam;
@@ -97,6 +99,10 @@ phaseBamRun(TConfig& c) {
     return -1;
   }
 
+  // Allele support file
+  std::ofstream asfile(c.as.string().c_str());
+  asfile << "chr\tpos\tref\talt\tdepth\trefsupport\taltsupport\tgt\th1af" << std::endl;
+  
   // Assign reads to SNPs
   uint32_t assignedReadsH1 = 0;
   uint32_t assignedReadsH2 = 0;
@@ -126,6 +132,8 @@ phaseBamRun(TConfig& c) {
     hts_itr_t* iter = sam_itr_queryi(idx, refIndex, 0, hdr->target_len[refIndex]);
     bam1_t* rec = bam_init1();
     while (sam_itr_next(samfile, iter, rec) >= 0) {
+      if (rec->core.flag & (BAM_FSECONDARY | BAM_FQCFAIL | BAM_FDUP | BAM_FSUPPLEMENTARY | BAM_FUNMAP)) continue;
+      if ((rec->core.qual < c.minMapQual) || (rec->core.tid<0)) continue;
       uint32_t hp1votes = 0;
       uint32_t hp2votes = 0;
       TPhasedVariants::const_iterator vIt = std::lower_bound(pv.begin(), pv.end(), BiallelicVariant(rec->core.pos), SortVariants<BiallelicVariant>());
@@ -232,6 +240,8 @@ phaseBamRun(TConfig& c) {
     TAlleleSupport ref(pv.size(), 0);
     TAlleleSupport alt(pv.size(), 0);
     while (sam_itr_next(samfile, itr, r) >= 0) {
+      if (r->core.flag & (BAM_FSECONDARY | BAM_FQCFAIL | BAM_FDUP | BAM_FSUPPLEMENTARY | BAM_FUNMAP)) continue;
+      if ((r->core.qual < c.minMapQual) || (r->core.tid<0)) continue;
       bool h1Found = false;
       bool h2Found = false;
       if (h1.find(hash_pair(r)) != h1.end()) h1Found = true;
@@ -335,7 +345,19 @@ phaseBamRun(TConfig& c) {
 
     // Output phased allele support
     for (uint32_t i = 0; i<pv.size(); ++i) {
-      std::cout << chrName << "\t" << pv[i].pos << "\t" << pv[i].ref << "\t" << pv[i].alt << "\t" << std::endl;
+      uint32_t totalcov = ref[i] + alt[i];
+      if (totalcov > 0) {
+	std::string hapstr;
+	double af = 0;
+	if (pv[i].hap) {
+	  hapstr = "1|0";
+	  af = (double) alt[i] / (double) totalcov;
+	} else {
+	  hapstr = "0|1";
+	  af = (double) ref[i] / (double) totalcov;
+	}
+	asfile << chrName << "\t" << (pv[i].pos + 1) << "\t" << pv[i].ref << "\t" << pv[i].alt << "\t" << totalcov << "\t" << ref[i] << "\t" << alt[i] << "\t" << hapstr << "\t" << af << std::endl;
+      }
     }
   }
   fai_destroy(fai);
@@ -350,6 +372,9 @@ phaseBamRun(TConfig& c) {
   sam_close(h2bam);
   bam_index_build(c.h1bam.string().c_str(), 0);
   bam_index_build(c.h2bam.string().c_str(), 0);
+
+  // Close output allele file
+  asfile.close();
 
   // Close BCF
   bcf_hdr_destroy(bcfhdr);
@@ -380,11 +405,13 @@ int main(int argc, char **argv) {
   boost::program_options::options_description generic("Generic options");
   generic.add_options()
     ("help,?", "show help message")
+    ("map-qual,m", boost::program_options::value<unsigned short>(&c.minMapQual)->default_value(1), "min. mapping quality")
     ("genome,g", boost::program_options::value<boost::filesystem::path>(&c.genome), "reference fasta file")
-    ("hap1,p", boost::program_options::value<boost::filesystem::path>(&c.h1bam)->default_value("h1.bam"), "haplotype 1 BAM file")
-    ("hap2,q", boost::program_options::value<boost::filesystem::path>(&c.h2bam)->default_value("h2.bam"), "haplotype 2 BAM file")
+    ("hap1,p", boost::program_options::value<boost::filesystem::path>(&c.h1bam)->default_value("h1.bam"), "haplotype1 output file")
+    ("hap2,q", boost::program_options::value<boost::filesystem::path>(&c.h2bam)->default_value("h2.bam"), "haplotype2 output file")
     ("sample,s", boost::program_options::value<std::string>(&c.sample)->default_value("NA12878"), "sample name")
-    ("vcffile,v", boost::program_options::value<boost::filesystem::path>(&c.vcffile), "phased BCF file")
+    ("as,a", boost::program_options::value<boost::filesystem::path>(&c.as)->default_value("as.tsv"), "allele-specific output file")
+    ("vcffile,v", boost::program_options::value<boost::filesystem::path>(&c.vcffile), "input phased BCF file")
     ;
 
   boost::program_options::options_description hidden("Hidden options");
@@ -405,7 +432,7 @@ int main(int argc, char **argv) {
 
   // Check command line arguments
   if ((vm.count("help")) || (!vm.count("input-file")) || (!vm.count("genome")) || (!vm.count("vcffile"))) {
-    std::cout << "Usage: " << argv[0] << " [OPTIONS] -g <ref.fa> -s NA12878 -v <snps.bcf> --hap1 <h1.bam> --hap2 <h2.bam> <unphased.bam>" << std::endl;
+    std::cout << "Usage: " << argv[0] << " [OPTIONS] -g <ref.fa> -s NA12878 -v <snps.bcf> --as <as.tsv> --hap1 <h1.bam> --hap2 <h2.bam> <unphased.bam>" << std::endl;
     std::cout << visible_options << "\n";
     return 1;
   }
