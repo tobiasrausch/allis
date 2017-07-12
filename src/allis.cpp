@@ -102,7 +102,6 @@ phaseBamRun(TConfig& c) {
   uint32_t assignedReadsH2 = 0;
   uint32_t unassignedReads = 0;
   uint32_t ambiguousReads = 0;
-  /*
   faidx_t* fai = fai_load(c.genome.string().c_str());
   for (int refIndex = 0; refIndex<hdr->n_targets; ++refIndex) {
     std::string chrName(hdr->target_name[refIndex]);
@@ -129,8 +128,8 @@ phaseBamRun(TConfig& c) {
     while (sam_itr_next(samfile, iter, rec) >= 0) {
       uint32_t hp1votes = 0;
       uint32_t hp2votes = 0;
-      TPhasedVariants::const_iterator vIt = std::lower_bound(pv.begin(), pv.end(), Variant(rec->core.pos), SortVariants<Variant>());
-      TPhasedVariants::const_iterator vItEnd = std::upper_bound(pv.begin(), pv.end(), Variant(lastAlignedPosition(rec)), SortVariants<Variant>());
+      TPhasedVariants::const_iterator vIt = std::lower_bound(pv.begin(), pv.end(), BiallelicVariant(rec->core.pos), SortVariants<BiallelicVariant>());
+      TPhasedVariants::const_iterator vItEnd = std::upper_bound(pv.begin(), pv.end(), BiallelicVariant(lastAlignedPosition(rec)), SortVariants<BiallelicVariant>());
       if (vIt != vItEnd) {
 	// Get read sequence
 	std::string sequence;
@@ -147,8 +146,12 @@ phaseBamRun(TConfig& c) {
 	  for (std::size_t i = 0; ((i < rec->core.n_cigar) && (!varFound)); ++i) {
 	    if (bam_cigar_op(cigar[i]) == BAM_CSOFT_CLIP) sp += bam_cigar_oplen(cigar[i]);
 	    else if (bam_cigar_op(cigar[i]) == BAM_CINS) sp += bam_cigar_oplen(cigar[i]);
+	    else if (bam_cigar_op(cigar[i]) == BAM_CSOFT_CLIP) sp += bam_cigar_oplen(cigar[i]);
 	    else if (bam_cigar_op(cigar[i]) == BAM_CDEL) gp += bam_cigar_oplen(cigar[i]);
-	    else if (bam_cigar_op(cigar[i]) == BAM_CMATCH) {
+	    else if (bam_cigar_op(cigar[i]) == BAM_CREF_SKIP) gp += bam_cigar_oplen(cigar[i]);
+	    else if (bam_cigar_op(cigar[i]) == BAM_CHARD_CLIP) {
+	      //Nop
+	    } else if (bam_cigar_op(cigar[i]) == BAM_CMATCH) {
 	      if (gp + (int32_t) bam_cigar_oplen(cigar[i]) < vIt->pos) {
 		gp += bam_cigar_oplen(cigar[i]);
 		sp += bam_cigar_oplen(cigar[i]);
@@ -203,6 +206,9 @@ phaseBamRun(TConfig& c) {
 		  }
 		}
 	      }
+	    } else {
+	      std::cerr << "Unknown Cigar options" << std::endl;
+	      return 1;
 	    }
 	  }
 	}
@@ -231,11 +237,9 @@ phaseBamRun(TConfig& c) {
 	// Inconsistent haplotype assignment for this pair
 	//std::cout << "Read\t" << bam_get_qname(r) << "\t" <<  hdr->target_name[r->core.tid] << "\t" << r->core.pos << "\t" << hdr->target_name[r->core.mtid] << "\t" << r->core.mpos << std::endl;
 	++ambiguousReads;
-	ambiguousBases += r->core.l_qseq;
       } else if (h1Found) {
 	int32_t hp = 1;
 	++assignedReadsH1;
-	assignedBasesH1 += r->core.l_qseq;
 	bam_aux_append(r, "HP", 'i', 4, (uint8_t*)&hp);
 	if (!sam_write1(h1bam, hdr, r)) {
 	  std::cerr << "Could not write to bam file!" << std::endl;
@@ -244,22 +248,17 @@ phaseBamRun(TConfig& c) {
       } else if (h2Found) {
 	int32_t hp = 2;
 	++assignedReadsH2;
-	assignedBasesH2 += r->core.l_qseq;
 	bam_aux_append(r, "HP", 'i', 4, (uint8_t*)&hp);
 	if (!sam_write1(h2bam, hdr, r)) {
 	  std::cerr << "Could not write to bam file!" << std::endl;
 	  return -1;
 	}
-      } else {
-	++unassignedReads;
-	unassignedBases += r->core.l_qseq;
-      }
+      } else ++unassignedReads;
     }
     bam_destroy1(r);
     hts_itr_destroy(itr);
   }
   fai_destroy(fai);
-  */
 
   // Close bam
   bam_hdr_destroy(hdr);
