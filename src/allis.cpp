@@ -101,7 +101,7 @@ phaseBamRun(TConfig& c) {
 
   // Allele support file
   std::ofstream asfile(c.as.string().c_str());
-  asfile << "chr\tpos\tref\talt\tdepth\trefsupport\taltsupport\tgt\th1af" << std::endl;
+  asfile << "chr\tpos\tref\talt\tdepth\trefsupport\taltsupport\tgt\tvaf\th1af" << std::endl;
   
   // Assign reads to SNPs
   uint32_t assignedReadsH1 = 0;
@@ -348,15 +348,16 @@ phaseBamRun(TConfig& c) {
       uint32_t totalcov = ref[i] + alt[i];
       if (totalcov > 0) {
 	std::string hapstr;
-	double af = 0;
+	double h1af = 0;
+	double vaf = (double) alt[i] / (double) totalcov;
 	if (pv[i].hap) {
 	  hapstr = "1|0";
-	  af = (double) alt[i] / (double) totalcov;
+	  h1af = (double) alt[i] / (double) totalcov;
 	} else {
 	  hapstr = "0|1";
-	  af = (double) ref[i] / (double) totalcov;
+	  h1af = (double) ref[i] / (double) totalcov;
 	}
-	asfile << chrName << "\t" << (pv[i].pos + 1) << "\t" << pv[i].ref << "\t" << pv[i].alt << "\t" << totalcov << "\t" << ref[i] << "\t" << alt[i] << "\t" << hapstr << "\t" << af << std::endl;
+	asfile << chrName << "\t" << (pv[i].pos + 1) << "\t" << pv[i].ref << "\t" << pv[i].alt << "\t" << totalcov << "\t" << ref[i] << "\t" << alt[i] << "\t" << hapstr << "\t" << vaf << "\t" << h1af << std::endl;
       }
     }
   }

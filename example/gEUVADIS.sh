@@ -22,6 +22,7 @@ then
     exit -1
 fi
 
+HG=${1}
 for SAMPLE in HG00096
 do
     # Download RNA-Seq data

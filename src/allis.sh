@@ -50,8 +50,7 @@ done
 bcftools annotate -O b -o ${OP}.input.bcf --rename-chrs ${OP}.rename.fwd.chrs ${OP}.freebayes.vcf.gz
 bcftools index ${OP}.input.bcf
 FILES=""
-#for CHR in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22
-for CHR in 1 2
+for CHR in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22
 do
     echo "Eagle2 phasing chr${CHR}"
     eagle --numThreads ${THREADS} --vcfRef ${BASEDIR}/../refpanel/chr${CHR}.bcf --vcfTarget ${OP}.input.bcf --geneticMapFile ${BASEDIR}/../refpanel/genetic_map_hg19_withX.txt.gz --outPrefix ${OP}.chr${CHR}.eagle2 --vcfOutFormat b --chrom ${CHR} 2>&1 | gzip -c > ${OP}.chr${CHR}.eagle2.log.gz
