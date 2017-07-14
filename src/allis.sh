@@ -21,7 +21,6 @@ export PATH=/g/funcgen/bin/:${PATH}
 
 # CMD params
 THREADS=4
-MQ=10
 BAM=${1}
 HG=${2}
 OP=${3}
@@ -72,4 +71,4 @@ done
 # Run Allis
 echo "Running allis"
 SAMPLE=`bcftools view ${OP}.ealge2.bcf | grep -m 1 "^#CHROM" | cut -f 10`
-${BASEDIR}/allis -m ${MQ} -g ${HG} -v ${OP}.ealge2.bcf -p ${OP}.h1.bam -q ${OP}.h2.bam -s ${SAMPLE} -a ${OP}.tsv ${BAM} | gzip -c > ${OP}.allis.log.gz
+${BASEDIR}/allis -g ${HG} -v ${OP}.ealge2.bcf -p ${OP}.h1.bam -q ${OP}.h2.bam -s ${SAMPLE} -a ${OP}.tsv ${BAM} | gzip -c > ${OP}.allis.log.gz
