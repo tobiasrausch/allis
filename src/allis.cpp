@@ -276,9 +276,9 @@ phaseBamRun(TConfig& c) {
 	  // Get base qualities
 	  typedef std::vector<uint8_t> TQuality;
 	  TQuality quality;
-	  quality.resize(rec->core.l_qseq);
-	  uint8_t* qualptr = bam_get_qual(rec);
-	  for (int i = 0; i < rec->core.l_qseq; ++i) quality[i] = qualptr[i];
+	  quality.resize(r->core.l_qseq);
+	  uint8_t* qualptr = bam_get_qual(r);
+	  for (int i = 0; i < r->core.l_qseq; ++i) quality[i] = qualptr[i];
 	  
 	  // Parse CIGAR
 	  uint32_t* cigar = bam_get_cigar(r);
