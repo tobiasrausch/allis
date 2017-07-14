@@ -30,11 +30,21 @@ if [ $# -eq 3 ]
 then
     # Call variants
     echo "FreeBayes variant calling"
-    freebayes --no-partial-observations --min-repeat-entropy 1 --report-genotype-likelihood-max --min-alternate-fraction 0.15 --fasta-reference ${HG} --genotype-qualities -b ${BAM} -v ${OP}.freebayes.vcf
-    bgzip ${OP}.freebayes.vcf
+    freebayes --no-partial-observations --min-repeat-entropy 1 --report-genotype-likelihood-max --min-alternate-fraction 0.15 --fasta-reference ${HG} --genotype-qualities -b ${BAM} -v ${OP}.fbraw.vcf
+    bgzip ${OP}.fbraw.vcf
+    tabix ${OP}.fbraw.vcf.gz
+
+    # Filter variants
+    bcftools filter -O z -o ${OP}.fbfiltered.vcf.gz -e '%QUAL<=20 || %QUAL/AO<=2 || SAF<=1 || SAR<=1' ${OP}.fbraw.vcf.gz
+    tabix ${OP}.fbfiltered.vcf.gz
+    rm ${OP}.fbraw.vcf.gz ${OP}.fbraw.vcf.gz.tbi
+
+    # Normalize variants
+    vt decompose ${OP}.fbfiltered.vcf.gz | vt normalize -r ${HG} - | vt uniq - | bgzip > ${OP}.freebayes.vcf.gz
     tabix ${OP}.freebayes.vcf.gz
+    rm ${OP}.fbfiltered.vcf.gz ${OP}.fbfiltered.vcf.gz.tbi
 else
-    # Link variants
+    # Fetch input variants
     bcftools view ${4} | bgzip > ${OP}.freebayes.vcf.gz
     tabix ${OP}.freebayes.vcf.gz
 fi
