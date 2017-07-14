@@ -272,6 +272,13 @@ phaseBamRun(TConfig& c) {
 	  sequence.resize(r->core.l_qseq);
 	  uint8_t* seqptr = bam_get_seq(r);
 	  for (int32_t i = 0; i < r->core.l_qseq; ++i) sequence[i] = "=ACMGRSVTWYHKDBN"[bam_seqi(seqptr, i)];
+
+	  // Get base qualities
+	  typedef std::vector<uint8_t> TQuality;
+	  TQuality quality;
+	  quality.resize(rec->core.l_qseq);
+	  uint8_t* qualptr = bam_get_qual(rec);
+	  for (int i = 0; i < rec->core.l_qseq; ++i) quality[i] = qualptr[i];
 	  
 	  // Parse CIGAR
 	  uint32_t* cigar = bam_get_cigar(r);
@@ -295,27 +302,29 @@ phaseBamRun(TConfig& c) {
 		  for(std::size_t k = 0; k<bam_cigar_oplen(cigar[i]); ++k, ++sp, ++gp) {
 		    if (gp == vIt->pos) {
 		      varFound = true;
-		      // Check REF allele
-		      if (vIt->ref == std::string(seq + gp, seq + gp + vIt->ref.size())) {
-			// Check ALT allele
-			if ((sp + vIt->alt.size() < sequence.size()) && (sp + vIt->ref.size() < sequence.size())) {
-			  if (vIt->ref.size() == vIt->alt.size()) {
-			    // SNP
-			    if ((sequence.substr(sp, vIt->alt.size()) == vIt->alt) && (sequence.substr(sp, vIt->ref.size()) != vIt->ref)) ++alt[vIt-pv.begin()];
-			    else if ((sequence.substr(sp, vIt->alt.size()) != vIt->alt) && (sequence.substr(sp, vIt->ref.size()) == vIt->ref)) ++ref[vIt-pv.begin()];
+		      if (quality[sp] >= c.minBaseQual) {
+			// Check REF allele
+			if (vIt->ref == std::string(seq + gp, seq + gp + vIt->ref.size())) {
+			  // Check ALT allele
+			  if ((sp + vIt->alt.size() < sequence.size()) && (sp + vIt->ref.size() < sequence.size())) {
+			    if (vIt->ref.size() == vIt->alt.size()) {
+			      // SNP
+			      if ((sequence.substr(sp, vIt->alt.size()) == vIt->alt) && (sequence.substr(sp, vIt->ref.size()) != vIt->ref)) ++alt[vIt-pv.begin()];
+			      else if ((sequence.substr(sp, vIt->alt.size()) != vIt->alt) && (sequence.substr(sp, vIt->ref.size()) == vIt->ref)) ++ref[vIt-pv.begin()];
+			    }
+			  } else if (vIt->ref.size() < vIt->alt.size()) {
+			    // Insertion
+			    int32_t diff = vIt->alt.size() - vIt->ref.size();
+			    std::string refProbe = vIt->ref + std::string(seq + gp + vIt->ref.size(), seq + gp + vIt->ref.size() + diff);
+			    if ((sequence.substr(sp, vIt->alt.size()) == vIt->alt) && (sequence.substr(sp, vIt->alt.size()) != refProbe)) ++alt[vIt-pv.begin()];
+			    else if ((sequence.substr(sp, vIt->alt.size()) != vIt->alt) && (sequence.substr(sp, vIt->alt.size()) == refProbe)) ++ref[vIt-pv.begin()];
+			  } else {
+			    // Deletion
+			    int32_t diff = vIt->ref.size() - vIt->alt.size();
+			    std::string altProbe = vIt->alt + std::string(seq + gp + vIt->ref.size(), seq + gp + vIt->ref.size() + diff);
+			    if ((sequence.substr(sp, vIt->ref.size()) == altProbe) && (sequence.substr(sp, vIt->ref.size()) != vIt->ref)) ++alt[vIt-pv.begin()];
+			    else if ((sequence.substr(sp, vIt->ref.size()) != altProbe) && (sequence.substr(sp, vIt->ref.size()) == vIt->ref)) ++ref[vIt-pv.begin()];
 			  }
-			} else if (vIt->ref.size() < vIt->alt.size()) {
-			  // Insertion
-			  int32_t diff = vIt->alt.size() - vIt->ref.size();
-			  std::string refProbe = vIt->ref + std::string(seq + gp + vIt->ref.size(), seq + gp + vIt->ref.size() + diff);
-			  if ((sequence.substr(sp, vIt->alt.size()) == vIt->alt) && (sequence.substr(sp, vIt->alt.size()) != refProbe)) ++alt[vIt-pv.begin()];
-			  else if ((sequence.substr(sp, vIt->alt.size()) != vIt->alt) && (sequence.substr(sp, vIt->alt.size()) == refProbe)) ++ref[vIt-pv.begin()];
-			} else {
-			  // Deletion
-			  int32_t diff = vIt->ref.size() - vIt->alt.size();
-			  std::string altProbe = vIt->alt + std::string(seq + gp + vIt->ref.size(), seq + gp + vIt->ref.size() + diff);
-			  if ((sequence.substr(sp, vIt->ref.size()) == altProbe) && (sequence.substr(sp, vIt->ref.size()) != vIt->ref)) ++alt[vIt-pv.begin()];
-			  else if ((sequence.substr(sp, vIt->ref.size()) != altProbe) && (sequence.substr(sp, vIt->ref.size()) == vIt->ref)) ++ref[vIt-pv.begin()];
 			}
 		      }
 		    }
