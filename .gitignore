@@ -3,6 +3,7 @@
 src/allis
 example/
 refpanel/
+R/exon.hg19.bed.gz
 
 # Prerequisites
 *.d
