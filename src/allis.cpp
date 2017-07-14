@@ -28,12 +28,19 @@ Contact: Tobias Rausch (rausch@embl.de)
 #include <fstream>
 
 #define BOOST_DISABLE_ASSERTS
+#include <boost/math/distributions/binomial.hpp>
 #include <boost/program_options/cmdline.hpp>
 #include <boost/program_options/options_description.hpp>
 #include <boost/program_options/parsers.hpp>
 #include <boost/program_options/variables_map.hpp>
 #include <boost/date_time/posix_time/posix_time.hpp>
 #include <boost/date_time/gregorian/gregorian.hpp>
+#include <boost/iostreams/device/file.hpp>
+#include <boost/iostreams/stream.hpp>
+#include <boost/iostreams/stream_buffer.hpp>
+#include <boost/iostreams/filtering_stream.hpp>
+#include <boost/iostreams/filter/zlib.hpp>
+#include <boost/iostreams/filter/gzip.hpp>
 #include <boost/tuple/tuple.hpp>
 #include <boost/filesystem.hpp>
 #include <boost/progress.hpp>
@@ -55,6 +62,7 @@ using namespace allis;
 
 struct Config {
   unsigned short minMapQual;
+  unsigned short minBaseQual;
   std::string sample;
   boost::filesystem::path as;
   boost::filesystem::path genome;
@@ -100,8 +108,10 @@ phaseBamRun(TConfig& c) {
   }
 
   // Allele support file
-  std::ofstream asfile(c.as.string().c_str());
-  asfile << "chr\tpos\tref\talt\tdepth\trefsupport\taltsupport\tgt\tvaf\th1af" << std::endl;
+  boost::iostreams::filtering_ostream dataOut;
+  dataOut.push(boost::iostreams::gzip_compressor());
+  dataOut.push(boost::iostreams::file_sink(c.as.string().c_str(), std::ios_base::out | std::ios_base::binary));
+  dataOut << "chr\tpos\tref\talt\tdepth\trefsupport\taltsupport\tgt\tvaf\th1af\tpvalue" << std::endl;
   
   // Assign reads to SNPs
   uint32_t assignedReadsH1 = 0;
@@ -357,7 +367,8 @@ phaseBamRun(TConfig& c) {
 	  hapstr = "0|1";
 	  h1af = (double) ref[i] / (double) totalcov;
 	}
-	asfile << chrName << "\t" << (pv[i].pos + 1) << "\t" << pv[i].ref << "\t" << pv[i].alt << "\t" << totalcov << "\t" << ref[i] << "\t" << alt[i] << "\t" << hapstr << "\t" << vaf << "\t" << h1af << std::endl;
+	double pval = binomTest(alt[i], totalcov, 0.5);
+	dataOut << chrName << "\t" << (pv[i].pos + 1) << "\t" << pv[i].ref << "\t" << pv[i].alt << "\t" << totalcov << "\t" << ref[i] << "\t" << alt[i] << "\t" << hapstr << "\t" << vaf << "\t" << h1af << "\t" << pval << std::endl;
       }
     }
   }
@@ -375,7 +386,7 @@ phaseBamRun(TConfig& c) {
   bam_index_build(c.h2bam.string().c_str(), 0);
 
   // Close output allele file
-  asfile.close();
+  dataOut.pop();
 
   // Close BCF
   bcf_hdr_destroy(bcfhdr);
@@ -406,12 +417,13 @@ int main(int argc, char **argv) {
   boost::program_options::options_description generic("Generic options");
   generic.add_options()
     ("help,?", "show help message")
-    ("map-qual,m", boost::program_options::value<unsigned short>(&c.minMapQual)->default_value(1), "min. mapping quality")
+    ("map-qual,m", boost::program_options::value<unsigned short>(&c.minMapQual)->default_value(10), "min. mapping quality")
+    ("base-qual,b", boost::program_options::value<unsigned short>(&c.minBaseQual)->default_value(10), "min. base quality")
     ("genome,g", boost::program_options::value<boost::filesystem::path>(&c.genome), "reference fasta file")
     ("hap1,p", boost::program_options::value<boost::filesystem::path>(&c.h1bam)->default_value("h1.bam"), "haplotype1 output file")
     ("hap2,q", boost::program_options::value<boost::filesystem::path>(&c.h2bam)->default_value("h2.bam"), "haplotype2 output file")
     ("sample,s", boost::program_options::value<std::string>(&c.sample)->default_value("NA12878"), "sample name")
-    ("as,a", boost::program_options::value<boost::filesystem::path>(&c.as)->default_value("as.tsv"), "allele-specific output file")
+    ("as,a", boost::program_options::value<boost::filesystem::path>(&c.as)->default_value("as.tsv.gz"), "allele-specific output file")
     ("vcffile,v", boost::program_options::value<boost::filesystem::path>(&c.vcffile), "input phased BCF file")
     ;
 

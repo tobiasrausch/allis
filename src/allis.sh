@@ -21,7 +21,7 @@ export PATH=/g/funcgen/bin/:${PATH}
 
 # CMD params
 THREADS=4
-MQ=1
+MQ=10
 BAM=${1}
 HG=${2}
 OP=${3}

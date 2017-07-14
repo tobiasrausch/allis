@@ -43,6 +43,18 @@ namespace allis
   };
 
 
+  inline double
+  binomTest(uint32_t x, uint32_t n, double p) {
+    boost::math::binomial binomialdist(n, p);
+    double cutoff = pdf(binomialdist, x);
+    double pval = 0.0;
+    for(uint32_t k = 0; k <= n; ++k) {
+      double p = pdf(binomialdist, k);
+      if (p <= cutoff) pval +=p;
+    }
+    return pval;
+  }
+
   template<typename TRecord>
   struct SortVariants : public std::binary_function<TRecord, TRecord, bool> {
     inline bool operator()(TRecord const& s1, TRecord const& s2) const {
