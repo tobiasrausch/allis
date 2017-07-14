@@ -16,6 +16,9 @@ bedGR=makeGRangesFromDataFrame(bed)
 asGR=makeGRangesFromDataFrame(data.frame(chr=as$chr, start=as$pos, end=as$pos))
 as=as[queryHits(findOverlaps(asGR, bedGR)),]
 
+# Accessible sites
+print(paste0("Accessible sites: ", nrow(as)))
+
 # Plot VAF distribution
 png(paste0(args[1], ".vaf.png"), height=600, width=600)
 p1=ggplot(data=as, aes(x=vaf))

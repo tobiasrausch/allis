@@ -35,7 +35,7 @@ then
     tabix ${OP}.fbraw.vcf.gz
 
     # Filter variants
-    bcftools filter -O z -o ${OP}.fbfiltered.vcf.gz -e '%QUAL<=20 || %QUAL/AO<=2 || SAF<=1 || SAR<=1' ${OP}.fbraw.vcf.gz
+    bcftools filter -O z -o ${OP}.fbfiltered.vcf.gz -e '%QUAL<=20 || %QUAL/AO<=2 || SAF<=2 || SAR<=2' ${OP}.fbraw.vcf.gz
     tabix ${OP}.fbfiltered.vcf.gz
     rm ${OP}.fbraw.vcf.gz ${OP}.fbraw.vcf.gz.tbi
 
