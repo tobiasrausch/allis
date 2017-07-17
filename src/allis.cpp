@@ -365,19 +365,19 @@ phaseBamRun(TConfig& c) {
     // Output phased allele support
     for (uint32_t i = 0; i<pv.size(); ++i) {
       uint32_t totalcov = ref[i] + alt[i];
+      std::string hapstr;
+      if (pv[i].hap) hapstr = "1|0";
+      else hapstr = "0|1";
       if (totalcov > 0) {
-	std::string hapstr;
 	double h1af = 0;
 	double vaf = (double) alt[i] / (double) totalcov;
-	if (pv[i].hap) {
-	  hapstr = "1|0";
-	  h1af = (double) alt[i] / (double) totalcov;
-	} else {
-	  hapstr = "0|1";
-	  h1af = (double) ref[i] / (double) totalcov;
-	}
+	if (pv[i].hap) h1af = (double) alt[i] / (double) totalcov;
+	else h1af = (double) ref[i] / (double) totalcov;
 	double pval = binomTest(alt[i], totalcov, 0.5);
 	dataOut << chrName << "\t" << (pv[i].pos + 1) << "\t" << pv[i].ref << "\t" << pv[i].alt << "\t" << totalcov << "\t" << ref[i] << "\t" << alt[i] << "\t" << hapstr << "\t" << vaf << "\t" << h1af << "\t" << pval << std::endl;
+      } else {
+	// No coverage
+	dataOut << chrName << "\t" << (pv[i].pos + 1) << "\t" << pv[i].ref << "\t" << pv[i].alt << "\t" << totalcov << "\t" << ref[i] << "\t" << alt[i] << "\t" << hapstr << "\tNA\tNA\tNA" << std::endl;
       }
     }
   }
