@@ -69,8 +69,8 @@ done
 rm ${OP}.input.bcf ${OP}.input.bcf.csi
 bcftools concat ${FILES} | fill-an-ac | bcftools annotate -O b -o ${OP}.eagle2join.bcf -x ^INFO/AC,INFO/AN,^FORMAT/GT -
 bcftools index ${OP}.eagle2join.bcf
-bcftools annotate -O b -o ${OP}.ealge2.bcf --rename-chrs ${OP}.rename.rev.chrs ${OP}.eagle2join.bcf
-bcftools index ${OP}.ealge2.bcf
+bcftools annotate -O b -o ${OP}.eagle2.bcf --rename-chrs ${OP}.rename.rev.chrs ${OP}.eagle2join.bcf
+bcftools index ${OP}.eagle2.bcf
 rm ${OP}.eagle2join.bcf ${OP}.eagle2join.bcf.csi
 rm ${OP}.rename.fwd.chrs ${OP}.rename.rev.chrs
 for CHR in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22
@@ -78,7 +78,19 @@ do
     rm ${OP}.chr${CHR}.eagle2.bcf ${OP}.chr${CHR}.eagle2.bcf.csi
 done
 
+# Annotate input BCF file
+if [ `bcftools view ${BASEDIR}/../refpanel/sites.bcf | head -n 500 | grep -m 1 "^##INFO=<ID=CSQ," | wc -l` -eq 1 ]
+then
+    # Include 1kGP AF and VEP annotation
+    bcftools annotate -O b -o ${OP}.eagle2.anno.bcf -a ${BASEDIR}/../refpanel/sites.bcf -c ID,INFO/CSQ,INFO/1kGP_AF:=INFO/AF ${OP}.eagle2.bcf
+else
+    # Include 1kGP AF
+    bcftools annotate -O b -o ${OP}.eagle2.anno.bcf -a ${BASEDIR}/../refpanel/sites.bcf -c ID,INFO/1kGP_AF:=INFO/AF ${OP}.eagle2.bcf
+fi
+bcftools index ${OP}.eagle2.anno.bcf
+rm ${OP}.eagle2.bcf ${OP}.eagle2.bcf.csi
+
 # Run Allis
 echo "Running allis"
-SAMPLE=`bcftools view ${OP}.ealge2.bcf | grep -m 1 "^#CHROM" | cut -f 10`
-${BASEDIR}/allis -g ${HG} -v ${OP}.ealge2.bcf -p ${OP}.h1.bam -q ${OP}.h2.bam -s ${SAMPLE} -a ${OP}.tsv.gz ${BAM} | gzip -c > ${OP}.allis.log.gz
+SAMPLE=`bcftools view ${OP}.eagle2.anno.bcf | grep -m 1 "^#CHROM" | cut -f 10`
+${BASEDIR}/allis -g ${HG} -v ${OP}.eagle2.anno.bcf -p ${OP}.h1.bam -q ${OP}.h2.bam -s ${SAMPLE} -a ${OP}.tsv.gz ${BAM} | gzip -c > ${OP}.allis.log.gz

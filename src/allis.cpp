@@ -57,6 +57,7 @@ Contact: Tobias Rausch (rausch@embl.de)
 #endif
 
 #include "util.h"
+#include "infoparse.h"
 
 using namespace allis;
 
@@ -111,7 +112,7 @@ phaseBamRun(TConfig& c) {
   boost::iostreams::filtering_ostream dataOut;
   dataOut.push(boost::iostreams::gzip_compressor());
   dataOut.push(boost::iostreams::file_sink(c.as.string().c_str(), std::ios_base::out | std::ios_base::binary));
-  dataOut << "chr\tpos\tref\talt\tdepth\trefsupport\taltsupport\tgt\tvaf\th1af\tpvalue" << std::endl;
+  dataOut << "chr\tpos\tid\tref\talt\tdepth\trefsupport\taltsupport\tgt\tvaf\th1af\tpvalue\t1kgpaf" << std::endl;
   
   // Assign reads to SNPs
   uint32_t assignedReadsH1 = 0;
@@ -363,22 +364,43 @@ phaseBamRun(TConfig& c) {
     if (seqlen) free(seq);
 
     // Output phased allele support
-    for (uint32_t i = 0; i<pv.size(); ++i) {
-      uint32_t totalcov = ref[i] + alt[i];
-      std::string hapstr;
-      if (pv[i].hap) hapstr = "1|0";
-      else hapstr = "0|1";
-      if (totalcov > 0) {
-	double h1af = 0;
-	double vaf = (double) alt[i] / (double) totalcov;
-	if (pv[i].hap) h1af = (double) alt[i] / (double) totalcov;
-	else h1af = (double) ref[i] / (double) totalcov;
-	double pval = binomTest(alt[i], totalcov, 0.5);
-	dataOut << chrName << "\t" << (pv[i].pos + 1) << "\t" << pv[i].ref << "\t" << pv[i].alt << "\t" << totalcov << "\t" << ref[i] << "\t" << alt[i] << "\t" << hapstr << "\t" << vaf << "\t" << h1af << "\t" << pval << std::endl;
-      } else {
-	// No coverage
-	dataOut << chrName << "\t" << (pv[i].pos + 1) << "\t" << pv[i].ref << "\t" << pv[i].alt << "\t" << totalcov << "\t" << ref[i] << "\t" << alt[i] << "\t" << hapstr << "\tNA\tNA\tNA" << std::endl;
+    hts_itr_t* itervcf = bcf_itr_querys(bcfidx, bcfhdr, chrName.c_str());
+    if (itervcf != NULL) {
+      bcf1_t* recvcf = bcf_init1();
+      for (uint32_t i = 0; i<pv.size(); ++i) {
+	// Fetch variant annotation from VCF
+	int32_t itrRet = 0;
+	do {
+	  itrRet = bcf_itr_next(ibcffile, itervcf, recvcf);
+	  if (itrRet >= 0) {
+	    bcf_unpack(recvcf, BCF_UN_SHR);
+	    std::vector<std::string> alleles;
+	    for(std::size_t k = 0; k<recvcf->n_allele; ++k) alleles.push_back(std::string(recvcf->d.allele[k]));
+	    if ((recvcf->pos == pv[i].pos) && (pv[i].ref == alleles[0]) && (pv[i].alt == alleles[1])) break;
+	  } else {
+	    std::cerr << "Error: Variant not found! " << chrName << ":" << (pv[i].pos + 1) << std::endl;
+	    return 1;
+	  }
+	} while (itrRet >= 0);
+	double af1kgp = fetch1kGPAF(bcfhdr, recvcf);
+	uint32_t totalcov = ref[i] + alt[i];
+	std::string hapstr;
+	if (pv[i].hap) hapstr = "1|0";
+	else hapstr = "0|1";
+	if (totalcov > 0) {
+	  double h1af = 0;
+	  double vaf = (double) alt[i] / (double) totalcov;
+	  if (pv[i].hap) h1af = (double) alt[i] / (double) totalcov;
+	  else h1af = (double) ref[i] / (double) totalcov;
+	  double pval = binomTest(alt[i], totalcov, 0.5);
+	  dataOut << chrName << "\t" << (pv[i].pos + 1) << "\t" << recvcf->d.id << "\t" << pv[i].ref << "\t" << pv[i].alt << "\t" << totalcov << "\t" << ref[i] << "\t" << alt[i] << "\t" << hapstr << "\t" << vaf << "\t" << h1af << "\t" << pval << "\t" << af1kgp << std::endl;
+	} else {
+	  // No coverage
+	  dataOut << chrName << "\t" << (pv[i].pos + 1) << "\t" << recvcf->d.id << "\t" << pv[i].ref << "\t" << pv[i].alt << "\t" << totalcov << "\t" << ref[i] << "\t" << alt[i] << "\t" << hapstr << "\tNA\tNA\tNA" << "\t" << af1kgp << std::endl;
+	}
       }
+      bcf_destroy(recvcf);
+      hts_itr_destroy(itervcf);
     }
   }
   fai_destroy(fai);
