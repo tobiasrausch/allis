@@ -108,6 +108,15 @@ phaseBamRun(TConfig& c) {
     return -1;
   }
 
+  // VEP annotated?
+  typedef std::map<std::string, int32_t> TColumnMap;
+  TColumnMap cmap;
+  char* htxt = NULL;
+  int32_t hlen;
+  htxt = bcf_hdr_fmt_text(bcfhdr, 1, &hlen);
+  bool csq = getCSQ(std::string(htxt), cmap);
+  if (htxt != NULL) free(htxt);
+  
   // Allele support file
   boost::iostreams::filtering_ostream dataOut;
   dataOut.push(boost::iostreams::gzip_compressor());

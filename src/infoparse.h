@@ -42,6 +42,48 @@ namespace allis
     return ret;
   }
 
+  template<typename TMap>
+  inline bool
+  getCSQ(std::string const& header, TMap& cmap) {
+    std::string delimiters("\n");
+    typedef std::vector<std::string> TStrParts;
+    TStrParts lines;
+    boost::split(lines, header, boost::is_any_of(delimiters));
+    TStrParts::const_iterator itH = lines.begin();
+    TStrParts::const_iterator itHEnd = lines.end();
+    bool foundCSQ = false;
+    for(;itH!=itHEnd; ++itH) {
+      if (itH->find("##INFO=<ID=CSQ,")==0) {
+	foundCSQ = true;
+	std::string delim(",");
+	TStrParts keyval;
+	boost::split(keyval, *itH, boost::is_any_of(delim));
+	TStrParts::const_iterator itKV = keyval.begin();
+	TStrParts::const_iterator itKVEnd = keyval.end();
+	for(;itKV != itKVEnd; ++itKV) {
+	  size_t sp = itKV->find("=");
+	  if (sp != std::string::npos) {
+	    std::string field = itKV->substr(0, sp);
+	    if (field == "Description") {
+	      std::string desc = itKV->substr(sp+1, itKV->size() - sp - 2);
+	      size_t colon = desc.find(":");
+	      if (colon != std::string::npos) {
+		std::string format = desc.substr(colon+2);
+		TStrParts columns;
+		boost::split(columns, format, boost::is_any_of(std::string("|")));
+		TStrParts::const_iterator itC = columns.begin();
+		TStrParts::const_iterator itCEnd = columns.end();
+		int32_t i = 0;
+		for(;itC != itCEnd; ++itC, ++i) cmap.insert(std::make_pair(*itC, i));
+	      }
+	    }
+	  }
+	}
+      }
+    }
+    return foundCSQ;
+  }
+  
 }
 
 #endif
