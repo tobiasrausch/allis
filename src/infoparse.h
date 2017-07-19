@@ -42,6 +42,27 @@ namespace allis
     return ret;
   }
 
+  template<typename TColumnMap, typename TStrVec>
+  inline void
+  fetchCSQ(bcf_hdr_t* hdr, bcf1_t* rec, TColumnMap const& cmap, TStrVec& rtv) {
+    int32_t ncsq = 0;
+    char* csq = NULL;
+    if (bcf_get_info_string(hdr, rec, "CSQ", &csq, &ncsq) > 0) {
+      std::string vep = std::string(csq);
+      TStrVec mgenes;
+      boost::split(mgenes, vep, boost::is_any_of(std::string(",")));
+      for(typename TStrVec::const_iterator mgIt = mgenes.begin(); mgIt != mgenes.end(); ++mgIt) {
+	rtv.clear();
+	boost::split(rtv, *mgIt, boost::is_any_of(std::string("|")));
+	std::string canonical("NA");
+	if ((!rtv.empty()) && (rtv[cmap.find("CANONICAL")->second].size())) canonical = rtv[cmap.find("CANONICAL")->second];
+	if (canonical == "YES") break;
+      }
+    }
+    if (csq != NULL) free(csq);
+  }
+
+
   template<typename TMap>
   inline bool
   getCSQ(std::string const& header, TMap& cmap) {

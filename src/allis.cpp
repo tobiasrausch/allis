@@ -111,17 +111,19 @@ phaseBamRun(TConfig& c) {
   // VEP annotated?
   typedef std::map<std::string, int32_t> TColumnMap;
   TColumnMap cmap;
-  char* htxt = NULL;
-  int32_t hlen;
-  htxt = bcf_hdr_fmt_text(bcfhdr, 1, &hlen);
-  bool csq = getCSQ(std::string(htxt), cmap);
-  if (htxt != NULL) free(htxt);
+  kstring_t htxt = {0,0,0};
+  bcf_hdr_format(bcfhdr, 0, &htxt);
+  bool csq = getCSQ(std::string(htxt.s), cmap);
+  if (htxt.m) free(htxt.s);
+  //for(typename TColumnMap::iterator itCM = cmap.begin(); itCM != cmap.end(); ++itCM) std::cout << itCM->first << ',' << itCM->second << std::endl;
   
   // Allele support file
   boost::iostreams::filtering_ostream dataOut;
   dataOut.push(boost::iostreams::gzip_compressor());
   dataOut.push(boost::iostreams::file_sink(c.as.string().c_str(), std::ios_base::out | std::ios_base::binary));
-  dataOut << "chr\tpos\tid\tref\talt\tdepth\trefsupport\taltsupport\tgt\tvaf\th1af\tpvalue\t1kgpaf" << std::endl;
+  dataOut << "chr\tpos\tid\tref\talt\tdepth\trefsupport\taltsupport\tgt\tvaf\th1af\tpvalue\t1kgpaf";
+  if (!csq) dataOut << std::endl;
+  else dataOut << "\tsymbol\texon\tstrand\tbiotype\tconsequence" << std::endl;
   
   // Assign reads to SNPs
   uint32_t assignedReadsH1 = 0;
@@ -402,10 +404,32 @@ phaseBamRun(TConfig& c) {
 	  if (pv[i].hap) h1af = (double) alt[i] / (double) totalcov;
 	  else h1af = (double) ref[i] / (double) totalcov;
 	  double pval = binomTest(alt[i], totalcov, 0.5);
-	  dataOut << chrName << "\t" << (pv[i].pos + 1) << "\t" << recvcf->d.id << "\t" << pv[i].ref << "\t" << pv[i].alt << "\t" << totalcov << "\t" << ref[i] << "\t" << alt[i] << "\t" << hapstr << "\t" << vaf << "\t" << h1af << "\t" << pval << "\t" << af1kgp << std::endl;
+	  dataOut << chrName << "\t" << (pv[i].pos + 1) << "\t" << recvcf->d.id << "\t" << pv[i].ref << "\t" << pv[i].alt << "\t" << totalcov << "\t" << ref[i] << "\t" << alt[i] << "\t" << hapstr << "\t" << vaf << "\t" << h1af << "\t" << pval << "\t" << af1kgp;
 	} else {
 	  // No coverage
-	  dataOut << chrName << "\t" << (pv[i].pos + 1) << "\t" << recvcf->d.id << "\t" << pv[i].ref << "\t" << pv[i].alt << "\t" << totalcov << "\t" << ref[i] << "\t" << alt[i] << "\t" << hapstr << "\tNA\tNA\tNA" << "\t" << af1kgp << std::endl;
+	  dataOut << chrName << "\t" << (pv[i].pos + 1) << "\t" << recvcf->d.id << "\t" << pv[i].ref << "\t" << pv[i].alt << "\t" << totalcov << "\t" << ref[i] << "\t" << alt[i] << "\t" << hapstr << "\tNA\tNA\tNA" << "\t" << af1kgp;
+	}
+	if (csq) {
+	  typedef std::vector<std::string> TStrParts;
+	  TStrParts vals;
+	  fetchCSQ(bcfhdr, recvcf, cmap, vals);
+	  //for(typename TStrParts::const_iterator itST = vals.begin(); itST != vals.end(); ++itST) std::cout << *itST << std::endl;
+	  std::string symb("NA");
+	  if ((!vals.empty()) && (vals[cmap.find("SYMBOL")->second].size())) symb = vals[cmap.find("SYMBOL")->second];
+	  std::string exon("NA");
+	  if ((!vals.empty()) && (vals[cmap.find("EXON")->second].size())) {
+	    exon = vals[cmap.find("EXON")->second];
+	    std::replace(exon.begin(), exon.end(), '/', ',');
+	  }
+	  std::string strand("NA");
+	  if ((!vals.empty()) && (vals[cmap.find("STRAND")->second].size())) strand = vals[cmap.find("STRAND")->second];
+	  std::string biotyp("NA");
+	  if ((!vals.empty()) && (vals[cmap.find("BIOTYPE")->second].size())) biotyp = vals[cmap.find("BIOTYPE")->second];
+	  std::string cons("NA");
+	  if ((!vals.empty()) && (vals[cmap.find("Consequence")->second].size())) cons = vals[cmap.find("Consequence")->second];
+	  dataOut << "\t" << symb << "\t" << exon << "\t" << strand << "\t" << biotyp << "\t" << cons << std::endl;
+	} else {
+	  dataOut << std::endl;
 	}
       }
       bcf_destroy(recvcf);
