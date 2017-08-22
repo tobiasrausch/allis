@@ -45,7 +45,7 @@ then
     rm ${OP}.fbfiltered.vcf.gz ${OP}.fbfiltered.vcf.gz.tbi
 else
     # Fetch input variants
-    bcftools view ${4} | bgzip > ${OP}.freebayes.vcf.gz
+    bcftools annotate ${4} -x INFO,^FORMAT/GT | bgzip > ${OP}.freebayes.vcf.gz
     tabix ${OP}.freebayes.vcf.gz
 fi
 
@@ -62,12 +62,15 @@ FILES=""
 for CHR in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22
 do
     echo "Eagle2 phasing chr${CHR}"
-    eagle --numThreads ${THREADS} --vcfRef ${BASEDIR}/../refpanel/chr${CHR}.bcf --vcfTarget ${OP}.input.bcf --geneticMapFile ${BASEDIR}/../refpanel/genetic_map_hg19_withX.txt.gz --outPrefix ${OP}.chr${CHR}.eagle2 --vcfOutFormat b --chrom ${CHR} 2>&1 | gzip -c > ${OP}.chr${CHR}.eagle2.log.gz
-    bcftools index ${OP}.chr${CHR}.eagle2.bcf
-    FILES=${FILES}" "${OP}.chr${CHR}.eagle2.bcf
+    if [ `bcftools view ${OP}.input.bcf ${CHR} | grep -m 1 "^#CHROM" -A 1 | wc -l` -eq 2 ]
+    then
+	eagle --numThreads ${THREADS} --vcfRef ${BASEDIR}/../refpanel/chr${CHR}.bcf --vcfTarget ${OP}.input.bcf --geneticMapFile ${BASEDIR}/../refpanel/genetic_map_hg19_withX.txt.gz --outPrefix ${OP}.chr${CHR}.eagle2 --vcfOutFormat b --chrom ${CHR} 2>&1 | gzip -c > ${OP}.chr${CHR}.eagle2.log.gz
+	bcftools index ${OP}.chr${CHR}.eagle2.bcf
+	FILES=${FILES}" "${OP}.chr${CHR}.eagle2.bcf
+    fi
 done
 rm ${OP}.input.bcf ${OP}.input.bcf.csi
-bcftools concat ${FILES} | fill-an-ac | bcftools annotate -O b -o ${OP}.eagle2join.bcf -x ^INFO/AC,INFO/AN,^FORMAT/GT -
+bcftools concat -O b -o ${OP}.eagle2join.bcf ${FILES}
 bcftools index ${OP}.eagle2join.bcf
 bcftools annotate -O b -o ${OP}.eagle2.bcf --rename-chrs ${OP}.rename.rev.chrs ${OP}.eagle2join.bcf
 bcftools index ${OP}.eagle2.bcf
@@ -75,17 +78,20 @@ rm ${OP}.eagle2join.bcf ${OP}.eagle2join.bcf.csi
 rm ${OP}.rename.fwd.chrs ${OP}.rename.rev.chrs
 for CHR in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22
 do
-    rm ${OP}.chr${CHR}.eagle2.bcf ${OP}.chr${CHR}.eagle2.bcf.csi
+    if [ -f ${OP}.chr${CHR}.eagle2.bcf ]
+    then
+	rm ${OP}.chr${CHR}.eagle2.bcf ${OP}.chr${CHR}.eagle2.bcf.csi
+    fi
 done
 
 # Annotate input BCF file
 if [ `bcftools view ${BASEDIR}/../refpanel/sites.bcf | head -n 500 | grep -m 1 "^##INFO=<ID=CSQ," | wc -l` -eq 1 ]
 then
     # Include 1kGP AF and VEP annotation
-    bcftools annotate -O b -o ${OP}.eagle2.anno.bcf -a ${BASEDIR}/../refpanel/sites.bcf -c ID,INFO/CSQ,INFO/1kGP_AF:=INFO/AF ${OP}.eagle2.bcf
+    bcftools annotate -O b -o ${OP}.eagle2.anno.bcf -a ${BASEDIR}/../refpanel/sites.bcf -c ID,INFO/CSQ,INFO/AF ${OP}.eagle2.bcf
 else
     # Include 1kGP AF
-    bcftools annotate -O b -o ${OP}.eagle2.anno.bcf -a ${BASEDIR}/../refpanel/sites.bcf -c ID,INFO/1kGP_AF:=INFO/AF ${OP}.eagle2.bcf
+    bcftools annotate -O b -o ${OP}.eagle2.anno.bcf -a ${BASEDIR}/../refpanel/sites.bcf -c ID,INFO/AF ${OP}.eagle2.bcf
 fi
 bcftools index ${OP}.eagle2.anno.bcf
 rm ${OP}.eagle2.bcf ${OP}.eagle2.bcf.csi

@@ -37,7 +37,7 @@ namespace allis
     int32_t naf = 0;
     float* af = NULL;
     double ret = 0;
-    if (bcf_get_info_float(hdr, rec, "1kGP_AF", &af, &naf) > 0) ret = *af;
+    if (bcf_get_info_float(hdr, rec, "AF", &af, &naf) > 0) ret = *af;
     if (af != NULL) free(af);
     return ret;
   }
