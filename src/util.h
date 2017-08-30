@@ -111,6 +111,7 @@ namespace allis
 
     // Collect het. bi-allelic variants for this chromosome
     int32_t chrid = bcf_hdr_name2id(hdr, chrom.c_str());
+    int32_t lastpos = -1;
     if (chrid < 0) return false;
     hts_itr_t* itervcf = bcf_itr_querys(bcfidx, hdr, chrom.c_str());
     if (itervcf != NULL) {
@@ -126,7 +127,11 @@ namespace allis
 	      std::vector<std::string> alleles;
 	      for(std::size_t i = 0; i<rec->n_allele; ++i) alleles.push_back(std::string(rec->d.allele[i]));
 	      //std::cerr << chrom << "\t" << (rec->pos + 1) << "\t" << std::string(alleles[0]) << "\t" << std::string(alleles[1]) << std::endl;
-	      pV.push_back(TVariant(rec->pos, std::string(alleles[0]), std::string(alleles[1]), bcf_gt_allele(gt[sampleIndex*2])));
+	      if (rec->pos != lastpos) {
+		// Only one variant per position
+		pV.push_back(TVariant(rec->pos, std::string(alleles[0]), std::string(alleles[1]), bcf_gt_allele(gt[sampleIndex*2])));
+		lastpos = rec->pos;
+	      }
 	    }
 	  }
 	}
