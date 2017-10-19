@@ -41,6 +41,8 @@ Contact: Tobias Rausch (rausch@embl.de)
 #include <boost/iostreams/filtering_stream.hpp>
 #include <boost/iostreams/filter/zlib.hpp>
 #include <boost/iostreams/filter/gzip.hpp>
+#include <boost/random.hpp>
+#include <boost/generator_iterator.hpp>
 #include <boost/tuple/tuple.hpp>
 #include <boost/filesystem.hpp>
 #include <boost/progress.hpp>
@@ -62,6 +64,7 @@ Contact: Tobias Rausch (rausch@embl.de)
 using namespace allis;
 
 struct Config {
+  bool assign;
   unsigned short minMapQual;
   unsigned short minBaseQual;
   std::string sample;
@@ -254,6 +257,12 @@ phaseBamRun(TConfig& c) {
     bam_destroy1(rec);
     hts_itr_destroy(iter);
 
+    // Random number generator
+    typedef boost::mt19937 RNGType;
+    RNGType rng;
+    boost::uniform_int<> one_or_two(1,2);
+    boost::variate_generator< RNGType, boost::uniform_int<> > dice(rng, one_or_two);
+    
     // Fetch all pairs
     hts_itr_t* itr = sam_itr_queryi(idx, refIndex, 0, hdr->target_len[refIndex]);
     bam1_t* r = bam_init1();
@@ -274,6 +283,23 @@ phaseBamRun(TConfig& c) {
 	++ambiguousReads;
       } else if ((!h1Found) && (!h2Found)) {
 	++unassignedReads;
+	if (c.assign) {
+	  // Random assignment
+	  int32_t hrnd = dice();
+	  if (hrnd == 1) {
+	    bam_aux_append(r, "HP", 'i', 4, (uint8_t*)&hrnd);
+	    if (!sam_write1(h1bam, hdr, r)) {
+	      std::cerr << "Could not write to bam file!" << std::endl;
+	      return -1;
+	    }
+	  } else {
+	    bam_aux_append(r, "HP", 'i', 4, (uint8_t*)&hrnd);
+	    if (!sam_write1(h2bam, hdr, r)) {
+	      std::cerr << "Could not write to bam file!" << std::endl;
+	      return -1;
+	    }
+	  }
+	}
       } else {
 	// Valid haplotype assignment
 	TPhasedVariants::const_iterator vIt = std::lower_bound(pv.begin(), pv.end(), BiallelicVariant(r->core.pos), SortVariants<BiallelicVariant>());
@@ -494,6 +520,7 @@ int main(int argc, char **argv) {
   boost::program_options::options_description hidden("Hidden options");
   hidden.add_options()
     ("input-file", boost::program_options::value<boost::filesystem::path>(&c.bamfile), "input bam file")
+    ("assign", "assign unphased reads randomly")
     ;
 
   boost::program_options::positional_options_description pos_args;
@@ -513,6 +540,10 @@ int main(int argc, char **argv) {
     std::cout << visible_options << "\n";
     return 1;
   }
+
+  // Assign unphased reads randomly?
+  if (!vm.count("assign")) c.assign = false;
+  else c.assign = true;
 
   // Check input BAM file
   if (vm.count("input-file")) {
